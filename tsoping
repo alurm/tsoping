@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+which tsoping > /dev/null 2> /dev/null || {
+  PATH=$PATH:$(dirname "$0")
+}
+
+usage () {
+  echo commands: fetch, links, set-start-time, send-to-telegram, set-chat-id, run
+  exit 1
+}
+
+echo tsoping is being run, args: '[' "$@" ']', date:
+date
+
+command=$1; shift 2> /dev/null || usage
+
+case "$command" in
+	fetch)
+		id=UCrqM0Ym_NbK1fqeQG2VIohg
+		url="https://www.youtube.com/feeds/videos.xml?channel_id=$id"
+		exec curl "$url" | xml2json > data/videos.json || {
+			echo "error: couldn't fetch videos XML or convert them to JSON"
+			exit 1
+		}
+  	;;
+	links)
+		test -e data/videos.json || tsoping fetch || exit 1
+		test -e data/last.time || tsoping set-start-time || exit 1
+
+		lasttime=$(cat data/last.time) || exit 1
+
+		atom='{http://www.w3.org/2005/Atom}'
+		yt='{http://www.youtube.com/xml/schemas/2015}'
+
+		cat data/videos.json | jq -r '
+			def striptimezone:
+				match("(.*)\\+(.*)").captures | map(.string)
+				| if .[1] != "00:00" then
+					error("timezone is not zero")
+				else .
+				end
+				| .[0] + "Z"
+			;
+
+			def tounix: striptimezone | fromdateiso8601;
+
+			."'"$atom"'entry"
+			| map(
+				{
+					time: (."'"$atom"'published" | tounix),
+					link: ("https://youtu.be/" + ."'"$yt"'videoId")
+				}
+				| select(
+					.time > '"$lasttime"'
+				)
+				# [ .time, .link ]
+				# .[]
+			)
+			| sort_by(.time)
+			| map(.[]) | .[]
+		' > data/links.txt
+	;;
+	set-start-time)
+		echo 'setting data/last.time to current time'
+		date +%s > data/last.time || {
+			echo "error: countn't set start time"
+			exit 1
+		}
+	;;
+	run)
+		tsoping fetch || { echo tsoping fetch failed; exit 1; }
+		tsoping links || { echo tsoping links failed; exit 1; }
+
+		cat data/links.txt | while true; do
+			IFS= read -r time || break
+			IFS= read -r link || {
+				echo error: read time but not link; exit 1
+			}
+
+			tsoping send-to-telegram "$time" "$link" || exit 1
+			
+			# Prevent link from being sent again.
+			echo "$time" > data/last.time || exit 1
+		done
+	;;
+	send-to-telegram)
+		time=$1; shift || { echo "error: no video timestamp given"; exit 1; }
+		link=$1; shift || { echo "error: no video link given"; exit 1; }
+
+		test -e data/chat.id || { echo "error: no chat id set"; exit 1; }
+		chat=$(cat data/chat.id) || exit 1
+
+		test -e data/telegram.secret || { echo "error: no telegram secret present"; exit 1; }
+		token=$(cat data/telegram.secret) || exit 1
+
+		url="https://api.telegram.org/bot$token"
+
+		curl \
+			"$url/sendMessage" \
+			-H 'content-type: application/json' \
+			-d '{
+				"chat_id": '"$chat"',
+				"text": "'"$link"'",
+				"disable_notification": true,
+				"link_preview_options": {
+					"url": "'"$link"'",
+					"is_disabled": false,
+					"prefer_small_media": true
+				}
+			}' \
+		|| exit 1
+	;;
+	set-chat-id)
+		id=$1; shift || { echo "error: no chat id given"; exit 1; }
+		echo "$id" > data/chat.id || exit 1
+	;;
+	*)
+		echo "error: no such command: $command"
+		usage
+	;;
+esac
