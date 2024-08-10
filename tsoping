@@ -89,11 +89,15 @@ case "$command" in
 		time=$1; shift || { echo "error: no video timestamp given"; exit 1; }
 		link=$1; shift || { echo "error: no video link given"; exit 1; }
 
-		test -e data/chat.id || { echo "error: no chat id set"; exit 1; }
-		chat=$(cat data/chat.id) || exit 1
+		if ! chat=$(cat "$TSOPING_CHAT_ID_FILE"); then
+		  echo "error: cound't read chat id file"
+		  exit 1
+		fi
 
-		test -e data/telegram.secret || { echo "error: no telegram secret present"; exit 1; }
-		token=$(cat data/telegram.secret) || exit 1
+		if ! token=$(cat "$TSOPING_TELEGRAM_TOKEN_FILE"); then
+		  echo "error: couldn't read telegram token file"
+		  exit 1
+		fi
 
 		url="https://api.telegram.org/bot$token"
 
