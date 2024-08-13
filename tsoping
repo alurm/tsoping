@@ -111,7 +111,7 @@ case "$command" in
 				"link_preview_options": {
 					"url": "'"$link"'",
 					"is_disabled": false,
-					"prefer_small_media": true
+					"prefer_small_media": false
 				}
 			}' \
 		|| exit 1
