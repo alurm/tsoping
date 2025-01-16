@@ -1,4 +1,6 @@
-# Send a link to a Telegram chat when Tsoding uploads 
+# Tsoping
+
+This is a tool that posts a link to a Telegram chat when Tsoding uploads.
 
 ## Building
 
